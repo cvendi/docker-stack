@@ -1,0 +1,60 @@
+services:
+  beszel:
+    networks:
+      - monitoring
+    image: henrygd/beszel:0.21.0
+    container_name: beszel
+    restart: unless-stopped
+    environment:
+      APP_URL: http://192.168.8.103:8090
+    ports:
+      - "192.168.8.103:8090:8090"
+    volumes:
+      - ./beszel_data:/beszel_data
+      - ./beszel_socket:/beszel_socket
+    healthcheck:
+      test: ["CMD", "/beszel", "health", "--url", "http://localhost:8090"]
+      interval: 60s
+      timeout: 5s
+      start_period: 15s
+
+  apprise:
+    networks:
+      - monitoring
+    image: caronc/apprise:latest
+    container_name: apprise
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      APPRISE_STATEFUL_MODE: simple
+      APPRISE_WORKER_COUNT: "1"
+      APPRISE_DEFAULT_FORMAT: text
+      TZ: America/New_York
+    ports:
+      - "127.0.0.1:8450:8000"
+    volumes:
+      - ./apprise/config:/config
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    container_name: go2rtc
+    restart: unless-stopped
+    networks:
+      - monitoring
+    ports:
+      - "192.168.8.103:1984:1984"
+      - "192.168.8.103:8554:8554"
+      - "192.168.8.103:8555:8555/tcp"
+      - "192.168.8.103:8555:8555/udp"
+    environment:
+      TZ: America/New_York
+    volumes:
+      - ./go2rtc/config:/config
+
+networks:
+  monitoring:
+    name: monitoring

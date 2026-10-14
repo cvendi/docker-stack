@@ -1,0 +1,131 @@
+# Torrent stack - gluetun (Proton VPN wireguard) + qBittorrent + Sonarr, Radarr, Prowlarr
+
+services:
+  gluetun:
+    image: docker.io/qmcgaw/gluetun:latest
+    container_name: gluetun-qbit
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.monitor-only: "true"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      - torrent
+      # Shared namespace makes Sonarr/Radarr reachable from Seerr later at
+      # http://gluetun:8989 and http://gluetun:7878 on the private media network.
+      - media
+    environment:
+      TZ: America/New_York
+      PUID: "1000"
+      PGID: "1000"
+
+      VPN_TYPE: wireguard
+      VPN_SERVICE_PROVIDER: protonvpn
+      SERVER_COUNTRIES: ${SERVER_COUNTRIES}
+      WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY}
+
+      PORT_FORWARD_ONLY: "on"
+      VPN_PORT_FORWARDING: "on"
+      VPN_PORT_FORWARDING_PROVIDER: protonvpn
+      VPN_PORT_FORWARDING_STATUS_FILE: /tmp/gluetun/forwarded_port
+      VPN_PORT_FORWARDING_PORTS_COUNT: "1"
+      VPN_PORT_FORWARDING_UP_COMMAND: /bin/sh -c 'wget -O- -nv --retry-connrefused --post-data "json={\"listen_port\":{{PORT}},\"current_network_interface\":\"{{VPN_INTERFACE}}\",\"random_port\":false,\"upnp\":false}" http://127.0.0.1:8080/api/v2/app/setPreferences'
+      VPN_PORT_FORWARDING_DOWN_COMMAND: /bin/sh -c 'wget -O- -nv --retry-connrefused --post-data "json={\"listen_port\":0,\"current_network_interface\":\"lo\"}" http://127.0.0.1:8080/api/v2/app/setPreferences'
+
+      STORAGE_SERVERS_DIRECTORY_PATH: /gluetun/servers/
+      PUBLICIP_API: ipinfo,ifconfigco,ip2location,cloudflare
+      UPDATER_MIN_RATIO: "0.8"
+    volumes:
+      - ${GLUETUN_CONFIG_DIR}:/gluetun
+    ports:
+      - "8080:8080"      # qBittorrent WebUI
+      - "8989:8989"      # Sonarr WebUI
+      - "7878:7878"      # Radarr WebUI
+      - "9696:9696"      # Prowlarr WebUI
+
+  qbittorrent:
+    image: docker.io/qbittorrentofficial/qbittorrent-nox:latest
+    container_name: qbittorrent
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.monitor-only: "true"
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      TZ: America/New_York
+      QBT_LEGAL_NOTICE: confirm
+      QBT_WEBUI_PORT: "8080"
+    volumes:
+      - ${QBIT_CONFIG_DIR}:/config
+      - ${QBIT_INCOMPLETE_DIR}:/data/incomplete
+      - ${QBIT_DOWNLOADS_DIR}:/data/complete
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.monitor-only: "true"
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      TZ: America/New_York
+      PUID: "1000"
+      PGID: "1000"
+      UMASK: "0022"
+    volumes:
+      - ${SONARR_CONFIG_DIR:-./sonarr}:/config
+      - ${QBIT_DOWNLOADS_DIR}:/data/complete
+      - ${SHOWS_DIR}:/tv
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.monitor-only: "true"
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      TZ: America/New_York
+      PUID: "1000"
+      PGID: "1000"
+      UMASK: "0022"
+    volumes:
+      - ${RADARR_CONFIG_DIR:-./radarr}:/config
+      - ${QBIT_DOWNLOADS_DIR}:/data/complete
+      - ${MOVIES_DIR}:/movies
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.monitor-only: "true"
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      TZ: America/New_York
+      PUID: "1000"
+      PGID: "1000"
+      UMASK: "0022"
+    volumes:
+      - ${PROWLARR_CONFIG_DIR}:/config
+
+networks:
+  torrent:
+    name: torrent
+    driver: bridge
+
+  media:
+    external: true
+    name: media

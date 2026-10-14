@@ -1,0 +1,105 @@
+# Soulseek automation stack — gluetun (Proton VPN WireGuard), slskd + SoulSync
+# Port automatically forwarded and set by slskd via gluetun HTTP control server
+# VPN Accelerator disabled in Proton VPN WireGuard config (causes problems with connections to peers)
+
+services:
+  gluetun:
+    image: docker.io/qmcgaw/gluetun:latest
+    container_name: gluetun-slskd
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.monitor-only: "true"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      - soulseek
+    environment:
+      TZ: America/New_York
+      PUID: "1000"
+      PGID: "1000"
+
+      VPN_TYPE: wireguard
+      VPN_SERVICE_PROVIDER: protonvpn
+      SERVER_COUNTRIES: "United States"
+      SERVER_CITIES: "New York"
+      WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY}
+
+      PORT_FORWARD_ONLY: "on"
+      VPN_PORT_FORWARDING: "on"
+      VPN_PORT_FORWARDING_PROVIDER: protonvpn
+      VPN_PORT_FORWARDING_STATUS_FILE: /tmp/gluetun/forwarded_port
+      VPN_PORT_FORWARDING_PORTS_COUNT: "1"
+
+      HTTP_CONTROL_SERVER_ADDRESS: :8000
+      HTTP_CONTROL_SERVER_LOG: "on"
+      HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE: ${GLUETUN_AUTH_DEFAULT_ROLE}
+      HTTP_CONTROL_SERVER_AUTH_CONFIG_FILEPATH: /gluetun/auth/config.toml
+
+      STORAGE_SERVERS_DIRECTORY_PATH: /gluetun/servers/
+      PUBLICIP_API: ipinfo,ifconfigco,ip2location,cloudflare
+      UPDATER_MIN_RATIO: "0.8"
+    volumes:
+      - ${GLUETUN_CONFIG_DIR}:/gluetun
+    ports:
+      - "5030:5030"                # slskd HTTP
+      - "127.0.0.1:8000:8000"      # gluetun HTTP control server
+
+  slskd:
+    image: docker.io/slskd/slskd:latest
+    container_name: slskd
+    restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.monitor-only: "true"
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    user: 1000:1000
+    environment:
+      TZ: America/New_York
+
+      SLSKD_VPN: "true"
+      SLSKD_VPN_PORT_FORWARDING: true
+      SLSKD_VPN_GLUETUN_URL: http://localhost:8000
+      SLSKD_VPN_GLUETUN_API_KEY: ${GLUETUN_API_KEY}
+      SLSKD_REMOTE_CONFIGURATION: "true"
+      SLSKD_HTTP_PORT: "5030"
+      SLSKD_UMASK: "0022"
+    volumes:
+      - ${SLSKD_APP_DIR}:/app
+      - ${SLSKD_DOWNLOADS_DIR}:/downloads
+      - ${SLSKD_INCOMPLETE_DIR}:/incomplete
+      - ${SLSKD_SHARED_DIR}:/shared
+
+  droppedneedle:
+    image: ghcr.io/droppedneedle/droppedneedle:latest
+    container_name: droppedneedle
+    labels:
+      com.centurylinklabs.watchtower.monitor-only: "true"
+    networks:
+      - soulseek
+      - media
+    environment:
+       - PUID=1000
+       - PGID=1000
+       - PORT=8688
+       - TZ=America/New_York
+       - SLSKD_DOWNLOADS_PATH=/slskd-downloads
+    ports:
+       - "8688:8688"
+    volumes:
+       - ./droppedneedle/config:/app/config
+       - ./droppedneedle/cache:/app/cache
+       - ${SLSKD_SHARED_DIR}:/music:rw
+       - ${SLSKD_COMPLETE_DIR}:/slskd-downloads:rw
+    restart: unless-stopped
+
+networks:
+  soulseek:
+    name: soulseek
+    driver: bridge
+
+  media:
+    external: true
+    name: media

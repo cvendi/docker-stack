@@ -1,0 +1,21 @@
+# Watchtower - automatic container updates on all containers at 2 AM EDT
+
+services:
+  watchtower:
+    image: nickfedor/watchtower
+    container_name: watchtower
+    networks:
+      - utils
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCHEDULE=0 0 6 * * *
+      - WATCHTOWER_NOTIFICATIONS=shoutrrr
+      - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFICATION_URL}
+    restart: unless-stopped
+
+networks:
+  utils:
+    external: true
+    name: utils

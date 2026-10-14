@@ -1,0 +1,66 @@
+# Media stack - jellyfin + seerr, navidrome
+
+services:
+  jellyfin:
+    image: docker.io/jellyfin/jellyfin:latest
+    container_name: jellyfin
+    restart: always
+    networks:
+      - media
+    environment:
+      TZ: America/New_York
+    ports:
+      - "8096:8096/tcp"
+      - "7359:7359/udp"
+    volumes:
+      - ${JELLYFIN_CONFIG_DIR}:/config
+      - ${JELLYFIN_CACHE_DIR}:/cache
+      - ${JELLYFIN_MOVIES_DIR}:/media/movies:ro
+      - ${JELLYFIN_SHOWS_DIR}:/media/tvshows:ro
+
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: navidrome
+    user: 1000:1000
+    ports:
+      - "127.0.0.1:4533:4533"
+    restart: unless-stopped
+    networks:
+      - media
+    environment:
+      ND_MUSICFOLDER: /music/library
+      ND_LASTFM_APIKEY: ${ND_LASTFM_APIKEY}
+      ND_LASTFM_SECRET: ${ND_LASTFM_APIKEY}
+    volumes:
+      - ${ND_DATA_DIR}:/data"
+      - ${ND_LIBRARY_DIR}:/music:ro"
+
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
+    init: true
+    restart: unless-stopped
+    networks:
+      - media
+      - utils
+    environment:
+      TZ: America/New_York
+    ports:
+      - "127.0.0.1:5055:5055"
+    volumes:
+      - ${SEERR_CONFIG_DIR}:/app/config
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/settings/public || exit 1
+      start_period: 20s
+      timeout: 3s
+      interval: 15s
+      retries: 3
+
+networks:
+  media:
+    name: media
+    driver: bridge
+
+  utils:
+    external: true
+    name: utils

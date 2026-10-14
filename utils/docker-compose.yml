@@ -1,0 +1,98 @@
+# Utilities
+
+services:
+  wallos:
+    container_name: wallos
+    image: bellamy/wallos:latest
+    restart: unless-stopped
+    ports:
+      - "8443:80"
+    environment:
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ${WALLOS_DB_DIR:-./wallos/db}:/var/www/html/db
+      - ${WALLOS_LOGOS_DIR:-./wallos/logos}:/var/www/html/images/uploads/logos
+    networks:
+      - utils
+
+  dockge:
+    image: louislam/dockge:1
+    container_name: dockge
+    restart: unless-stopped
+    networks:
+      - utils
+    ports:
+      # Host Port : Container Port
+      - 5001:5001
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./dockge/data:/app/data
+
+      # If you want to use private registries, you need to share the auth file with Dockge:
+      # - /root/.docker/:/root/.docker
+
+      # Stacks Directory
+      # ⚠️ READ IT CAREFULLY. If you did it wrong, your data could end up writing into a WRONG PATH.
+      # ⚠️ 1. FULL path only. No relative path (MUST)
+      # ⚠️ 2. Left Stacks Path === Right Stacks Path (MUST)
+      - /home/user/docker:/home/user/docker
+    environment:
+      # Tell Dockge where is your stacks directory
+      - DOCKGE_STACKS_DIR=/home/user/docker
+
+  metube:
+    image: ghcr.io/alexta69/metube
+    container_name: metube
+    restart: unless-stopped
+    ports:
+      - "8481:8081"
+    volumes:
+      - /mnt/storage/media/saved:/downloads
+    networks:
+      - utils
+
+  speedtest-tracker:
+      image: lscr.io/linuxserver/speedtest-tracker:latest
+      restart: unless-stopped
+      container_name: speedtest-tracker
+      networks:
+        - utils
+        - monitoring
+      ports:
+        - 8337:80
+      environment:
+        - TZ=America/New_York
+        - APP_TIMEZONE=America/New_York
+        - DISPLAY_TIMEZONE=America/New_York
+        - PUID=1000
+        - PGID=1000
+        - APP_KEY=${APP_KEY}
+        - APP_URL=http://localhost:8337
+        - DB_CONNECTION=sqlite
+        - SPEEDTEST_SCHEDULE=30 2 * * *
+      volumes:
+        - ./speedtest-tracker:/config
+
+  ntfy:
+      image: binwiederhier/ntfy
+      container_name: ntfy
+      networks:
+        - utils
+      command:
+        - serve
+      environment:
+        - TZ=America/New_York    # optional: set desired timezone
+      user: 1000:1000 # optional: replace with your own user/group or uid/gid
+      volumes:
+        - ${NTFY_CACHE_DIR}:/var/cache/ntfy
+        - ${NTFY_CONFIG_DIR}:/etc/ntfy
+      ports:
+        - "8445:80"
+      restart: unless-stopped
+
+networks:
+  monitoring:
+    external: true
+    name: monitoring
+  utils:
+    name: utils
